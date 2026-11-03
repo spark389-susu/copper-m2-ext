@@ -53,6 +53,22 @@ export type Availability =
   | { status: "not_a_color"; product: string; color: string; colors: string[] }
   | { status: "unavailable"; message: string };
 
+export type EstimateShippingInput = CheckAvailabilityInput;
+
+export type ShippingEstimate =
+  | {
+      status: "ok";
+      product: string;
+      colors: {
+        color: string;
+        inStockNow: boolean;
+        nextShipment: string;
+        daysUntil: number;
+      }[];
+    }
+  | { status: "not_a_color"; product: string; color: string; colors: string[] }
+  | { status: "unavailable"; message: string };
+
 const productIds = ["copper-home", "copper-notes"] as const;
 
 const toCents = (amount: number) => Math.round(amount * 100) / 100;
@@ -186,6 +202,77 @@ export async function checkAvailability(
   };
 }
 
+export const estimateShippingInput: z.ZodType<EstimateShippingInput> =
+  checkAvailabilityInput;
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * estimate_shipping: when the next shipment of stock lands for a product (or
+ * one of its colors), from the stock list's next_shipment dates. It is when
+ * more stock arrives, not a delivery date to a customer.
+ * `today` is a parameter so tests can pick the date.
+ */
+export async function estimateShipping(
+  input: EstimateShippingInput,
+  today: Date = new Date(),
+): Promise<ShippingEstimate> {
+  const { product: id, color } = estimateShippingInput.parse(input);
+  const product = getProducts().find((item) => item.id === id)!;
+
+  let wanted = product.colors;
+  if (color !== undefined) {
+    const match = product.colors.find(
+      (name) => name.toLowerCase() === color.trim().toLowerCase(),
+    );
+    if (!match) {
+      return {
+        status: "not_a_color",
+        product: product.name,
+        color,
+        colors: product.colors,
+      };
+    }
+    wanted = [match];
+  }
+
+  const rows = await readInventory();
+  if (rows === null) {
+    return {
+      status: "unavailable",
+      message:
+        "Shipping dates can't be checked right now. Please try again shortly.",
+    };
+  }
+
+  // Compare whole days (UTC), so the time of day never shifts the count.
+  const todayUtc = Date.UTC(
+    today.getUTCFullYear(),
+    today.getUTCMonth(),
+    today.getUTCDate(),
+  );
+  return {
+    status: "ok",
+    product: product.name,
+    colors: wanted.flatMap((name) => {
+      const row = rows.find(
+        (item) => item.product === product.name && item.color === name,
+      );
+      if (!row) return [];
+      return [
+        {
+          color: name,
+          inStockNow: row.units_in_stock > 0,
+          nextShipment: row.next_shipment,
+          daysUntil: Math.round(
+            (Date.parse(row.next_shipment) - todayUtc) / MS_PER_DAY,
+          ),
+        },
+      ];
+    }),
+  };
+}
+
 export const copperTools = {
   get_products: tool({
     description:
@@ -212,3 +299,18 @@ export const copperTools = {
     execute: async (input) => checkAvailability(input),
   }),
 };
+
+// An extension of the four course tools. It lives in its own list so
+// `copperTools` stays exactly the four the course tests expect; the chat sends
+// both lists to the model.
+export const extraTools = {
+  estimate_shipping: tool({
+    description:
+      "Estimate when the next shipment of a product, or of one of its colors, arrives, in days, from the live stock list. It is when more stock lands, not a delivery date to the customer. Negative days means the date has passed.",
+    inputSchema: estimateShippingInput,
+    execute: async (input) => estimateShipping(input),
+  }),
+};
+
+/** Every tool Ask Copper can use: the four course tools plus the extras. */
+export const askCopperTools = { ...copperTools, ...extraTools };

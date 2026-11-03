@@ -11,7 +11,7 @@ import { callStream, THOUGHT_SUMMARIES } from "@/lib/ai/call";
 import { createLive, type Live } from "@/lib/ai/live";
 import { COPPER_INSTRUCTIONS } from "@/lib/copper/assistant/instructions";
 import type { Progress, Step } from "@/lib/copper/assistant/progress";
-import { copperTools } from "@/lib/copper/assistant/tools";
+import { askCopperTools } from "@/lib/copper/assistant/tools";
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -72,7 +72,7 @@ export async function askCopper(
           // answers from memory alone, with nothing telling it to check.
           ...(useTools && {
             instructions: COPPER_INSTRUCTIONS,
-            tools: copperTools,
+            tools: askCopperTools,
             stopWhen: stepCountIs(MAX_STEPS),
           }),
         },

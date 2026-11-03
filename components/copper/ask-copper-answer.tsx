@@ -337,6 +337,25 @@ function CameBack({ step }: { step: ToolStep }) {
       </div>
     );
 
+  if (name === "estimate_shipping" && output.status === "ok")
+    return (
+      <div className="space-y-1 text-sm">
+        {asList(output.colors).map((entry, i) => {
+          if (!isObj(entry)) return null;
+          const days = Number(entry.daysUntil);
+          return (
+            <div key={i} className="flex justify-between gap-3">
+              <span>{String(entry.color)}</span>
+              <span>
+                {formatDate(String(entry.nextShipment))} ·{" "}
+                {days > 0 ? `in ${days} ${days === 1 ? "day" : "days"}` : "due now"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+
   // check_availability
   if (output.status === "ok")
     return (
